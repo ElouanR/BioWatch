@@ -19,6 +19,7 @@ client = anthropic.Anthropic(api_key=os.environ["LLM_API_KEY"])
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
+
 @dataclass
 class LLMResult:
     text: str
@@ -29,12 +30,13 @@ class LLMResult:
     model: str
     stop_reason: str | None
 
+
 def call_llm(
-    system: str, 
-    user: str, 
-    effort: Effort = "low", 
+    system: str,
+    user: str,
+    effort: Effort = "low",
     max_tokens: int = 2048,
-    component: str = "misc"
+    component: str = "misc",
 ) -> LLMResult:
     start = time.perf_counter()
     resp = client.messages.create(
@@ -50,9 +52,22 @@ def call_llm(
     in_tok, out_tok = resp.usage.input_tokens, resp.usage.output_tokens
 
     cost = (in_tok * PRICE_IN + out_tok * PRICE_OUT) / 1_000_000
-    res = LLMResult(text, in_tok, out_tok, latency, cost, MODEL, resp.stop_reason)
+    res = LLMResult(
+        text, in_tok, out_tok, latency, cost, MODEL, resp.stop_reason
+    )
+
     with LOG.open("a") as f:
         log = {k: v for k, v in asdict(res).items() if k != "text"}
-        f.write(json.dumps({"ts": time.time(), "component": component,
-                            "effort": effort, **log}) + "\n")
+        f.write(
+            json.dumps(
+                {
+                    "ts": time.time(),
+                    "component": component,
+                    "effort": effort,
+                    **log,
+                }
+            )
+            + "\n"
+        )
+
     return res
