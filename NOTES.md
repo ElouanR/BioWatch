@@ -63,4 +63,7 @@
 - Editing a gold row after seeing model outputs biases the comparison. One row was corrected to follow the written rule and the effect is documented in `eval/results.md`.
 - `extract.py` now takes `PROMPT_VERSION` and `EFFORT` from the environment (`.env` is loaded by `llm.py` before they are read; a variable set on the command line wins) and runs `dev` or `test` from the saved split.
 - Final: v4 at `effort=medium`, test run once: interventions F1 0.79, conditions F1 1.00 (n=15). Dev mean for interventions was 0.87. Test file kept in `data/processed/extractions_v4_test.jsonl`.
-- Not done yet: population/comparator scoring, the 300-trial API consistency check.
+- Consistency check (v4, medium, 300 trials, $0.10): F1 0.35 interventions, 0.38 conditions against the API fields. The API used as a predictor against my hand gold scores about the same (0.31, 0.36), so it is a poor answer key, not a sign the model is poor. The API keeps dosage/brand in names, lists placebo as an intervention and radiotherapy as a condition. `evaluate.py <name> api` runs it.
+- The model reads title + brief summary only (median 66 words). Detailed description (missing for 36% of trials) and eligibility criteria are not used: it is a design choice made in step 2 that was never tested. Using them would need a new gold set.
+- The registration has structured parts (conditions, interventions with a type, arm groups with a type, age/sex) and free text (detailed description, eligibility criteria). Structured parts are typed by the registrant and are noisy too.
+- Not done yet: population/comparator text scoring.

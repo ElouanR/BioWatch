@@ -119,6 +119,47 @@ condition and wrote it differently.
 Three of five are naming or granularity mismatches where the gold choice
 is arbitrary; two are measurement-only studies where rule 5 still fails.
 
+## Consistency check against the API fields (300 trials)
+
+v4, `effort=medium`, all 300 trials (300/300 parsed, $0.10, 149 s), compared
+with the `interventions` and `conditions` columns of ClinicalTrials.gov.
+Same metric. This is **not ground truth**: the API fields describe the whole
+registration, not only the summary the model sees. Output:
+`data/processed/extractions_v4_all.jsonl`.
+
+| field | precision | recall | F1 | n |
+|---|---|---|---|---|
+| interventions | 0.43 | 0.29 | 0.35 | 300 trials |
+| conditions | 0.53 | 0.30 | 0.38 | 300 trials |
+
+- Calibration: using the API fields as if they were a model, scored against
+  the 30 hand-annotated trials, gives F1 0.31 (interventions) and 0.36
+  (conditions). The API disagrees with the hand gold about as much as the
+  model disagrees with the API, so the low numbers say the API is a poor
+  answer key for this task, not that the model is poor (test F1 0.79 / 1.00).
+- The API lists more items (1.96 interventions and 2.55 conditions per trial,
+  against 1.31 and 1.43 for the model) and never has an empty `conditions`
+  field, while the model returns an empty `conditions` list for 22 trials
+  whose summary names no disease.
+- Typical disagreements: the API keeps dosage, brand and formulation in the
+  name (`Pembrolizumab 50 MG Injection [Keytruda]`), lists `Placebo` as an
+  intervention, lists `Radiotherapy` or `Immunotherapy` as conditions, and
+  lists disease subtypes or comorbidities the summary does not mention
+  (`Mesothelioma`, `Obesity, Morbid`).
+- By group, agreement is best for lung cancer interventions (F1 0.48) and
+  Alzheimer's conditions (F1 0.50), and worst for lung cancer conditions
+  (F1 0.29), where the API lists many subtypes.
+
+## Input scope
+
+The model reads the title and the brief summary only (median 66 words).
+`detailedDescription` (missing for 108 of 300 trials, median 101 words) and
+`eligibilityCriteria` (median 195 words) are not used, and neither are the
+structured arm groups. Adding the free text would raise the median input to
+about 475 words, would break the current gold set (annotated from title and
+summary only) and is the main candidate for improving `population` and
+`comparator`.
+
 ## Limits
 
 - 15 dev and 15 test trials, about 30 gold items per field: one item moves
@@ -133,7 +174,6 @@ is arbitrary; two are measurement-only studies where rule 5 still fails.
 - Several gold decisions are judgement calls (related conditions, whether a
   population's comorbidities count, measurement-only studies).
 - `population` and `comparator` are not evaluated.
-- The consistency check against the API fields on all 300 trials is not done.
 
 ## Conclusions
 
@@ -143,6 +183,7 @@ is arbitrary; two are measurement-only studies where rule 5 still fails.
 - What doesn't: the model still splits one programme into parts, adds
   sub-protocols, and lists methods in measurement-only studies; some of the
   remaining "errors" are naming choices the metric cannot absorb.
-- Next: score `population` and `comparator` by hand, run the 300-trial
-  consistency check against the API, and test the pipeline on a larger gold
-  set before trusting any number to the second decimal.
+- Next: score `population` and `comparator` text by hand, try the
+  detailed description and eligibility criteria as input (with a new gold set
+  for those two fields), and use a larger gold set before trusting any number
+  to the second decimal.

@@ -3,6 +3,7 @@ import re
 import sys
 from pathlib import Path
 
+import pandas as pd
 from rapidfuzz import fuzz
 
 
@@ -68,9 +69,23 @@ def load_jsonl(path: Path) -> list[dict]:
         return [json.loads(line) for line in f]
 
 
-def main(version: str, split: str) -> None:
+def load_golds(split: str) -> dict:
+    if split == "api":
+        df = pd.read_parquet("data/processed/trials.parquet")
+        return {
+            r["nct_id"]: {
+                "interventions": list(r["interventions"]),
+                "conditions": list(r["conditions"]),
+            }
+            for r in df.to_dict("records")
+        }
+
     gold_rows = load_jsonl(Path("data/gold/gold.jsonl"))
-    golds = {r["nct_id"]: r for r in gold_rows if r["split"] == split}
+    return {r["nct_id"]: r for r in gold_rows if r["split"] == split}
+
+
+def main(version: str, split: str) -> None:
+    golds = load_golds(split)
     pred_rows = load_jsonl(Path(f"data/processed/extractions_{version}.jsonl"))
     preds = {r["nct_id"]: r["parsed"] for r in pred_rows}
     print(f"{version} on {split} (n={len(golds)})")
@@ -81,8 +96,7 @@ def main(version: str, split: str) -> None:
 
 
 def show_errors(version: str, split: str, field: str) -> None:
-    gold_rows = load_jsonl(Path("data/gold/gold.jsonl"))
-    golds = {r["nct_id"]: r for r in gold_rows if r["split"] == split}
+    golds = load_golds(split)
     pred_rows = load_jsonl(Path(f"data/processed/extractions_{version}.jsonl"))
     preds = {r["nct_id"]: r["parsed"] for r in pred_rows}
 
