@@ -1,16 +1,19 @@
 import json
+import os
 import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 
-from biowatch.llm import MODEL, call_llm
+from biowatch.llm import MODEL, PRICE_IN, PRICE_OUT, Effort, call_llm
 from biowatch.schemas import TrialInfo
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = os.environ.get("PROMPT_VERSION", "v1")
+EFFORT = cast(Effort, os.environ.get("EFFORT", "low"))
 SYSTEM = Path(f"prompts/extract_{PROMPT_VERSION}.txt").read_text()
 SCHEMA = json.dumps(TrialInfo.model_json_schema())
 
@@ -25,7 +28,7 @@ def extract_one(nct_id: str, title: str, summary: str) -> dict:
         f"Title: {title}\n\nSummary:\n{summary}\n\n"
         f"Return only a JSON object matching this schema:\n{SCHEMA}"
     )
-    res = call_llm(SYSTEM, user, component="extract")
+    res = call_llm(SYSTEM, user, effort=EFFORT, component="extract")
     record = {
         "nct_id": nct_id,
         "prompt_version": PROMPT_VERSION,
@@ -45,6 +48,7 @@ def extract_one(nct_id: str, title: str, summary: str) -> dict:
             SYSTEM,
             user + f"\n\nYour previous answer was invalid ({e}). "
             "Return valid JSON only.",
+            effort=EFFORT,
             component="extract",
         )
         record["raw_output"] = retry.text
@@ -63,10 +67,20 @@ TRIALS = Path("data/processed/trials.parquet")
 OUT = Path(f"data/processed/extractions_{PROMPT_VERSION}.jsonl")
 
 
-def run(limit: int | None = None, workers: int = 5) -> list[dict]:
+SPLITS = Path("data/gold/split.json")
+
+
+def run(
+    limit: int | None = None,
+    split: str | None = None,
+    workers: int = 5,
+) -> list[dict]:
     df = pd.read_parquet(TRIALS)
 
-    if limit:
+    if split:
+        ids = json.loads(SPLITS.read_text())[split]
+        df = df.loc[df["nct_id"].isin(ids)]
+    elif limit:
         df = df.sample(limit, random_state=0)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -85,9 +99,11 @@ def run(limit: int | None = None, workers: int = 5) -> list[dict]:
 
 
 def main() -> None:
-    limit = int(sys.argv[1]) if len(sys.argv) > 1 else None
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    split = arg if arg in ("dev", "test") else None
+    limit = int(arg) if arg and split is None else None
     start = time.perf_counter()
-    records = run(limit)
+    records = run(limit, split)
     elapsed = time.perf_counter() - start
 
     ok = sum(r["parsed"] is not None for r in records)
@@ -98,6 +114,9 @@ def main() -> None:
         f"avg tokens per trial: {in_tok / len(records):.0f} in, "
         f"{out_tok / len(records):.0f} out"
     )
+    latency = sum(r["latency_s"] for r in records) / len(records)
+    cost = (in_tok * PRICE_IN + out_tok * PRICE_OUT) / 1_000_000
+    print(f"avg latency per trial: {latency:.1f}s, cost: ${cost:.4f}")
     print(f"total time: {elapsed:.0f}s")
 
 

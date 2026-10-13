@@ -49,3 +49,18 @@
 - My prompt defines interventions as "drugs or therapies", narrower than the API's (blood draws, tests, devices). Candidate for a v2 prompt, but only after step 4 gives numbers.
 - The API is not a perfect answer key either (it lists `surgery` for a retinal-thickness study).
 - Output tokens vary a lot (68 to 488) for similar prompts: most of it is thinking tokens at `effort=low`.
+
+## Step 4 — Evaluation
+- Wrote `eval/guidelines.md` before annotating. Each unclear case found while annotating led to a new rule (outcomes are not conditions, country is not population, qualifiers belong to the population, same-drug regimens are a comparator, brand names are not translated, full term over acronym). Gold: `data/gold/gold.jsonl`, split in `data/gold/split.json` (seed 42, 15 dev / 15 test, saved ids so the split cannot move).
+- `evaluate.py`: `norm()` then `diff_lists()` (greedy one-to-one fuzzy match, returns the extra and missed strings), `match_lists()` (counts), `prf()`, `score_field()` (sums the counts over trials, then computes the scores). Micro scores: add counts first, never average per-trial percentages.
+- Loop over the gold ids, not the predictions, so a trial the model failed on still counts against it.
+- Precision is about the model's list, recall is about the gold's list. A model that returns nothing has precision 1.0, recall 0 and F1 0.
+- Some "errors" are the metric's fault, not the model's: `(MCI)` in parentheses, one extra word. Fix the metric once, then re-score every version, before comparing prompts.
+- Prompt examples must be invented, never taken from dev trials.
+- v2 fixed naming and extras but made a regression: an imaging trial went from found to empty. Always look at what got worse, not only at the mean.
+- No temperature means run-to-run noise. 3 runs were not enough: low and medium effort looked equal, then 8 runs showed medium ahead with half the spread. Compare means over several runs and look at the range.
+- Do not attribute a gain to a change that did not target that field (conditions moved while only an intervention rule changed).
+- Editing a gold row after seeing model outputs biases the comparison. One row was corrected to follow the written rule and the effect is documented in `eval/results.md`.
+- `extract.py` now takes `PROMPT_VERSION` and `EFFORT` from the environment (`.env` is loaded by `llm.py` before they are read; a variable set on the command line wins) and runs `dev` or `test` from the saved split.
+- Final: v4 at `effort=medium`, test run once: interventions F1 0.79, conditions F1 1.00 (n=15). Dev mean for interventions was 0.87. Test file kept in `data/processed/extractions_v4_test.jsonl`.
+- Not done yet: population/comparator scoring, the 300-trial API consistency check.
