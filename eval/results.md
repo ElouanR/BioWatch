@@ -45,6 +45,11 @@ model has no temperature, so the same prompt gives different outputs).
   spread. The conditions numbers moved although no rule targeted
   conditions, so they are not attributable to a prompt change.
 
+Files in `data/processed/` are single sample runs (`extractions_v2_dev`,
+`v3_dev`, `v4_dev` at medium, `v4_test`; `v1` covers all 300 trials). The
+tables report means over several runs, so re-scoring one file with
+`evaluate.py <name> dev` gives one draw of that distribution.
+
 ## Effort comparison (v4, dev, 8 runs per level)
 
 | | low | medium |
