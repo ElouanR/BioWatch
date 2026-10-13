@@ -23,3 +23,29 @@
 - **Missing values:** phases 19.0% (empty list), interventions 8.0% (empty list), start_date 0.7%. Every other column 0%.
 - No trial was dropped for an empty summary, and no duplicate `nct_id` appeared across groups.
 - Worth remembering for step 3: very short summaries (5 words) leave the LLM little to extract, and `NA` phase (not applicable) is a real value, different from a missing phase.
+
+## Step 3 — LLM extraction
+- `schemas.py` defines `TrialInfo` (interventions, conditions, population, comparator). `prompts/extract_v1.txt` holds the rules. `extract.py` has `parse_json()` (strips Markdown fences, validates with Pydantic), `extract_one()` (one retry) and a thread pool (5 workers) that writes `data/processed/extractions_v1.jsonl`.
+- Every record keeps `prompt_version`, `model`, `raw_output`, `parsed`, `error` and token counts, so a result can be traced and re-parsed without a new API call.
+- Prompt file = prompt only. Explanations pasted into it would be sent to the model on every call.
+- Row subsets use `df.sample(..., random_state=0)`, not `head`: the table is ordered by group.
+
+### Silent failure found
+- On the first full run, one trial (NCT05198830) came back with all fields empty and no error. The model had echoed the JSON schema instead of filling it in. Pydantic ignores unknown keys by default and every field has a default, so it was "valid".
+- Fix: `model_config = ConfigDict(extra="forbid")` on `TrialInfo`. An echoed schema is now rejected and goes to the retry path (checked on a fake echoed schema).
+- On the re-run the same trial was extracted correctly and no retry fired, so the guard has not been seen working on a real case yet. The model has no temperature, so the same prompt can fail on one run and pass on the next.
+- Lesson: a valid output is not necessarily a correct output. Parse rate alone is not a quality measure; that is what step 4 is for.
+
+### Results (v1, claude-haiku-5-5, effort=low, 300 trials)
+- **Parsed:** 300/300 (100%), 0 retries, every call ended with `end_turn` (no truncation).
+- **Tokens per trial:** 848 in, 174 out on average.
+- **Cost:** about $0.05 for the run (about $0.11 spent in total so far, from the log). **Time:** 94 s with 5 workers; median call 1.2 s, max 4.9 s.
+- **Empty or null:** comparator 205/300, population 37/300, interventions 32/300, conditions 20/300.
+
+### First impressions (about 20 outputs read)
+- No invented values spotted. When the text does not say, the model leaves the field empty (rule 1 works).
+- Empty `conditions` mostly happens when the summary never names the disease (the API has more context than the summary). Reasonable.
+- Differences with the API fields are mostly naming and granularity: `NN1250` vs `insulin degludec` (same drug), case differences, one program split into four interventions, long population phrases. Step 4 needs normalisation and fuzzy matching, not exact comparison.
+- My prompt defines interventions as "drugs or therapies", narrower than the API's (blood draws, tests, devices). Candidate for a v2 prompt, but only after step 4 gives numbers.
+- The API is not a perfect answer key either (it lists `surgery` for a retinal-thickness study).
+- Output tokens vary a lot (68 to 488) for similar prompts: most of it is thinking tokens at `effort=low`.
